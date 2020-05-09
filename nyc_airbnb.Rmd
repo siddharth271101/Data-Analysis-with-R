@@ -1,0 +1,246 @@
+---
+title: "A Data Analysis of the New York City Airbnb"
+author: " By Siddharth Sudhakar"
+date: "May 8, 2020"
+output:
+  html_document:
+    code_folding: hide
+    css: style1.css
+    highlight: monochrome
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+    toc_float: no
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r global_options, include=FALSE, echo = False}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+## Introduction
+Airbnb is an online marketplace for arranging or offering lodging, primarily homestays, or tourism experiences. It acts as a broker, receiving commissions from each booking.It currently covers more than 81,000 cities and 191 countries worldwide.<br>
+The [dataset](https://www.kaggle.com/dgomonov/new-york-city-airbnb-open-data) we will be using contains 16 features about Airbnb listings within New York City.
+
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(wesanderson)
+library(wordcloud)
+library(RColorBrewer)
+library(tm)
+library(gridExtra)
+data <- read_csv("AB_NYC.csv")
+  theme_func <- function() {
+  theme_minimal() +
+  theme(
+    text = element_text(family = "serif", color = "gray25"),
+    plot.subtitle = element_text(size = 12,hjust = 0.5,color = "gray45"),
+    plot.caption = element_text(color = "gray30"),
+    plot.background = element_rect(fill = "gray95"),
+    plot.margin = unit(c(5, 10, 5, 10), units = "mm"),
+    plot.title = element_text(hjust = 0.5),
+    strip.text = element_text(color = "white")
+  )
+}
+
+#na_count <-sapply(data, function(y) sum(is.na(y)))
+#na_count <- data.frame(na_count)   
+#na_count
+names_to_delete <- c("id", "host_id","last_review")
+data[names_to_delete] <- NULL
+data$reviews_per_month[is.na(data$reviews_per_month)] = mean(data$reviews_per_month, na.rm=TRUE)
+names_to_factor <- c("host_name", "neighbourhood_group", "neighbourhood", "room_type")
+data[names_to_factor] <- map(data[names_to_factor], as.factor)
+
+
+
+```
+
+## Distribution of price
+Initally the distribution was highly skewed to the right,by applying log transformation we get something close to a bell shaped curve.<br>
+The average price among all the neighbourhood listings is found to be **152.75$**.
+
+```{r fig.align="center"}
+mean_price <- data %>%
+  group_by(neighbourhood_group) %>%
+  summarise(price = round(mean(price), 2))
+
+ggplot(data, aes(price)) +
+
+  geom_histogram( aes(y = ..density..), fill = "steelblue") + 
+  geom_density(alpha = 0.1, fill = "steelblue") +
+ggplot2::annotate("text", x = 1500, y = 1.0,label = "Mean price = 152.75$", size = 5) +
+  geom_rug(alpha = 0.05)  +
+
+  geom_vline(xintercept = round(mean(data$price), 2), size = 1, linetype = 2) +
+  scale_x_log10() + 
+  theme_func() +
+        labs(
+    subtitle = expression("With" ~'log'[10] ~ "transformation on x-axis"),
+    title = "Distribution of price"
+  )
+
+
+```
+
+## Distribution of neighbourhood groups
+### By price
+As we saw earlier the distribution is skewed to the right, with most of the listings have prices below 250$.<br> 
+Manhattan seems to be more expensive compared to other neighbourhood groups as there are large number of listings having price more than 250$.It can also be infered that Staten Island and Bronx have relatively smaller number of listings.
+
+
+```{r fig.align = "center"}
+
+
+data %>% 
+    mutate(neighbourhood_group = factor(neighbourhood_group, levels = c("Manhattan","Brooklyn","Queens","Bronx","Staten Island") )) %>% 
+    ggplot(aes( x = price, y = neighbourhood_group)) + 
+    
+    geom_point(
+        alpha = 0.2,
+        shape = '|',
+        position = position_nudge(y = -0.05)) +
+    # Set bandwidth to 3.5
+    geom_density_ridges(aes(fill =neighbourhood_group),bandwidth = 8.5,alpha= 0.7) +
+    # add limits of 0 to 150 to x-scale
+    scale_x_continuous(limits = c(0,450),expand  = c(0,0)) +
+        theme( axis.ticks.y = element_blank(),
+               legend.position = "none")+
+    # provide subtitle with bandwidth
+    labs(title = 'Distribution of neighbourhood_group by price') +
+      theme_func()
+```
+
+
+### By price and room type
+
+The pricing of the room type follows the order Entire home apt > Private room > Shared room,this trend is true across all the neighbourhood groups.<br>
+As we found earlier Manhattan is the most expensive neighbourhood followed by Brooklyn and Queens.
+```{r fig.align = "center"}
+data %>%
+    ggplot(aes(x = neighbourhood_group, y = price)) + 
+
+
+    geom_boxplot(alpha = 0.7,aes(fill = room_type) ) +
+    scale_y_log10()+
+    # Reset point size to default and set point shape to 95
+   geom_point(alpha = 0.2,shape = 95) +
+   
+     geom_hline(yintercept = mean(data$price), linetype = 2)+
+    # Supply a subtitle detailing the kernel width
+    labs(title = 'Distibution of neighbourhood_group by price and room_type',
+             subtitle = expression("With" ~'log'[10] ~ "transformation on y-axis")) +
+    theme_func()
+```
+
+### By location
+The most expensive neighbourhood groups Manhattan,Queens and Brooklyn appear to be close to each other.<br>
+The plot for Manhattan and Brooklyn are very dense and can be understood as being the most popular neighbourhood for Airbnb in New York.<br>
+Staten Island and Bronx are not very popular for Airbnb. 
+
+```{r fig.align = "center"}
+ggplot(data, aes(longitude,latitude))+
+  stat_density_2d(aes(color = neighbourhood_group)) +
+  ggtitle("2-D density plot of neighbourhood_group") +
+    theme_func()
+
+
+```
+
+## Top 40 Neighbourhoods
+The most popular neighbourhoods are Williamsburg,Bedford-Stuyvesant,Harlem and Bushwick.
+As we saw earlier the most popular neighbourhood groups are Manhattan and Brooklyn.
+```{r fig.align = "center"}
+
+data%>%
+  group_by(neighbourhood,neighbourhood_group)%>%
+  summarise(count = n())%>%
+  arrange(desc(count))%>%
+  head(30) %>%
+   ggplot(aes(x = fct_reorder(neighbourhood,count),y = count,fill = neighbourhood_group ))+
+  geom_col() +
+  coord_flip() +
+
+scale_fill_manual(values = wes_palette("GrandBudapest1", n = 3)) +
+  theme_func() +
+  ggtitle("Top 40 neighbourhoods by count") + 
+  labs(x = 'neighbourhood')
+
+```
+
+## Relationship between price, number of reviews and minimum nights
+The most expensive listings have very few or even zero reviews,and with cheaper listings having more number of reviews.<br>
+The same relationship applies to minimum nights, with most expensive listing requiring lesser nights to book.
+
+```{r fig.align = "center"}
+reviews_price <- ggplot(data,aes(x = number_of_reviews,y=price))+
+  geom_point(alpha = 0.2,color = "darkorchid2") +
+  theme_func() +
+      labs(title = 'Correlation between number_of_reviews and price')
+
+minimum_nights_price <- ggplot(data,aes(x = minimum_nights,y=price))+
+  geom_point(alpha = 0.6,color="goldenrod2") +
+  theme_func() +
+        labs(title = 'Correlation between minimum_nights and price')
+
+grid.arrange(reviews_price,minimum_nights_price,nrow = 2)
+
+```
+
+## Wordclouds for titles
+Here I wanted to check the difference in word choice of titles between Low and high price Airbnb listings.<br>
+In the low price category the most popular words as titles seems to be **cozy,apartment,bedroom,village and sunny**.
+
+```{r fig.align = "center"}
+pal2 <- brewer.pal(8,"Dark2")
+word_data <- data %>% 
+  mutate(name = strsplit(as.character(name), " ")) %>%
+  unnest(name) %>%
+  group_by(name)%>%
+  filter(price < 130.72)
+#word_data <- slice(word_data,1:10)
+word_data <- word_data[1:10000,"name"]
+
+
+corp_title <- Corpus(VectorSource(word_data$name))
+corp_title <- tm_map(corp_title, tolower)
+title_cleaned <- tm_map(corp_title,removeWords, stopwords("english"))
+
+tdm <- TermDocumentMatrix(title_cleaned)
+m <- as.matrix(tdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+ wordcloud(d$word,d$freq, scale=c(8,.3),min.freq=1,max.words=100, random.order=T, rot.per=.35, colors=pal2, vfont=c("sans serif","plain"))
+ 
+```
+
+
+In the expensive listings the popular words used as titles are **spacious,luxury,private,duplex and garden.**
+```{r fig.align = "center"} 
+ pal2 <- brewer.pal(8,"Dark2")
+word_data <- data %>% 
+  mutate(name = strsplit(as.character(name), " ")) %>%
+  unnest(name) %>%
+  group_by(name)%>%
+  filter(price > 182.72)
+#word_data <- slice(word_data,1:10)
+word_data <- word_data[1:10000,"name"]
+corp_title <- Corpus(VectorSource(word_data$name))
+corp_title <- tm_map(corp_title, tolower)
+title_cleaned <- tm_map(corp_title,removeWords, stopwords("english"))
+
+tdm <- TermDocumentMatrix(title_cleaned)
+m <- as.matrix(tdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+ wordcloud(d$word,d$freq, scale=c(8,.3),min.freq=1,max.words=100, random.order=T, rot.per=.35, colors=pal2, vfont=c("sans serif","plain"))
+```
+
+## Conclusion
+Manhatt
+
+ 
