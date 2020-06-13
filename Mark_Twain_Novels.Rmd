@@ -1,0 +1,379 @@
+---
+title: "Text Mining Mark Twain Novels"
+author: "Siddharth Sudhakar"
+date: "13/06/2020"
+output:
+  html_document:
+    css: style1.css
+    highlight: monochrome
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+    toc_float: no
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## <b>Introduction</b>
+
+Samuel Langhorne Clemens , known worldwide by his pen name Mark Twain, was an American author renowned worldwide as one of the most influential writers in the English language. He has authored more than 25 novels,in this project I will be analysing four of his very famous works :-
+
+* Adventures of Huckleberry Finn
+* The Adventures of Tom Sawyer
+* Roughing It
+* The Gilded Age 
+
+
+<br>
+I will download those novels from [Project Gutenberg](http://www.gutenberg.org/) (A library of over 60,000 free eBooks) using the `gutenbergr` package.
+```{r warning=FALSE,message = FALSE}
+library(tidyverse)
+library(wordcloud)
+library(gutenbergr)
+library(tidytext)
+library(tidyr)
+library(ggraph)
+library(igraph)
+library(reshape2)
+```
+
+
+
+```{r message = FALSE}
+twain_books <- gutenberg_download(c( 74, 76,3177,3178), meta_fields = "title")
+```
+
+## <b>Tokenizing by n-gram</b>
+We got the data, the next step is tokenization.Where we split the data into individual words using the `unnest_tokens` function.Then remove stop words using `antijoin` function. 
+
+```{r message = FALSE}
+tidy_books <- twain_books %>%
+  unnest_tokens(word, text)%>%
+  anti_join(stop_words)
+```
+
+Let us have a quick look at the most frequently used words in Mark Twain's novels.
+
+```{r message = FALSE,fig.align = "center"}
+tidy_books %>%
+  count(word, sort = TRUE) %>%
+  mutate(word = reorder(word, n)) %>%
+  top_n(10)%>%
+  ggplot(aes(word, n,fill=-n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() + 
+  ggtitle("The Most Common Words in Mark Twains' Novels")
+
+
+```
+
+
+Earlier we simply counted the occurence of each word and listed the most frequent words.One of the problems with this approach is that a word’s context can matter nearly as much as its presence.Thus we will now work with tokens containing two (bigrams) or three(trigrams) words as it can help to extract useful phrases which leads to some additional insights.
+
+### <b>Bigrams</b>
+
+```{r}
+books_bigrams <- twain_books %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+books_bigrams
+
+```
+
+In the below steps, we first split the bigrams into two. Remove if any of the word is a stopword and then we unite them back again. 
+
+```{r}
+bigrams_separated <- books_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+bigrams_filtered
+```
+
+
+
+```{r}
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+bigrams_united
+
+
+```
+
+After filtering the next step is essentially to find the most common bigrams in each of the novels.
+
+
+```{r fig.align = "center"}
+bigram_tf_idf <- bigrams_united %>%
+  count(title, bigram) %>%
+  bind_tf_idf(bigram, title, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf %>%
+  arrange(desc(tf_idf)) %>%
+  group_by(title) %>%
+  top_n(10, tf_idf) %>%
+  ungroup() %>%
+  mutate(bigram = reorder(bigram, tf_idf)) %>%
+  ggplot(aes(bigram, tf_idf, fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ title, ncol = 2, scales = "free") +
+  coord_flip() +
+  labs(y = "tf-idf of bigram to novel",
+       x = "")
+
+```
+
+We can see that the most common bigrams in Mark Twain's novels is names such as injun joe,mary jane,aunt sally,aunt polly,miss watson etc.  
+
+
+
+Finally, we will visualize relationships between these bigrams by plotting a network of bigrams with ggraph.
+
+```{r warning=FALSE}
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 20) %>%
+  graph_from_data_frame()
+
+```
+
+
+
+```{r fig.align = "center"}
+
+set.seed(2020)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) + 
+  ggtitle("Network of Bigrams in Mark Twains' Novels")
+
+
+```
+
+
+In the word network we can see that quantitative words like "yards","miles","dollars","feet" all have a common node "hundred".Also we can see salutation such as "aunt","miss","col"  are followed by their names.Other than those we can see a lot of names coming up.
+
+### <b>Trigrams</b>
+
+```{r}
+twain_books %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+
+
+```
+The popular trigrams are "miss mary jane", "salt lake city", "genuine mexican plug", "ten/hundred/twenty thousand dollars".
+
+
+
+## <b>Sentiment Analysis</b>
+
+### <b>Comparison Cloud</b>
+At first we will look at the words that contribute the most to positive and negative sentiment.We will be using the [Bing](https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html) lexicon for this purpose. 
+```{r warning=FALSE,message = FALSE,fig.align = "center"}
+
+tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 100)
+
+
+```
+
+### <b>Overall Sentiment of Novels</b>
+
+```{r message=FALSE}
+
+section_words <- twain_books %>%
+  # filter(title == "The Adventures of Tom Sawyer") %>%
+  mutate(section = row_number()) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word)
+
+
+mark_twain_sentiment <- section_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(title, index = section %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+```
+
+
+
+```{r fig.align = "center",fig.width=10}
+
+ggplot(mark_twain_sentiment, aes(index, sentiment, fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~title, ncol = 2, scales = "free_x")
+
+
+```
+
+Next we will plot a stacked barchart to find the proportion of positive and negative sentiments in each of the four novels.
+
+```{r message = FALSE,fig.width=10,fig.align = "center"}
+# Review tail of all_books
+books_sent_count <- tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(title, sentiment, sort = TRUE) %>%
+  ungroup()
+
+
+
+book_pos <- books_sent_count %>%
+  # Group by book
+  group_by(title) %>% 
+  # Mutate to add % positive column 
+  mutate(percent_positive = 100 * n / sum(n) )
+
+# Plot percent_positive vs. book, filled by sentiment
+ggplot(book_pos, aes(title,percent_positive, fill = sentiment)) +  
+  # Add a col layer
+  geom_col()+ 
+  ggtitle("Proportion of Positive/Negative Sentiment Scores")
+```
+
+All the novels have a greater proportion of negative sentiment.But earlier when we divided each novel into sections we found that most of the sections were negative.Thus I suspect many words are falsely labelled as positive.
+
+To verify this we will use the bigrams which we collected earlier and find the most common words which are preceded by negation.
+
+```{r fig.height=8,fig.align = "center"}
+negation_words <- c("not", "no","can't","don't")
+
+negated_words <- bigrams_separated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(get_sentiments("afinn"), by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+
+negated_words %>%
+  mutate(contribution = n * value,
+         word2 = reorder(paste(word2, word1, sep = "__"), contribution)) %>%
+  group_by(word1) %>%
+  top_n(10, abs(contribution)) %>%
+  ggplot(aes(word2, contribution, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ word1, scales = "free",ncol=2) +
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+  xlab("Words preceded by negation term") +
+  ylab("Sentiment value * # of occurrences") +
+  coord_flip()+ 
+  ggtitle("Positive/Negative Words that Follow Negations")
+
+
+```
+
+Here we can see  pairings like "can't help","don't like","no good","not help" etc,which otherwise will be termed as positive.
+
+### <b>NRC Lexicon</b>
+We will use the [NRC Word Emotion Association Lexicon](http://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm) to add 8 more sentiments to our analysis.<br>
+Before we find the major sentiments in the novels,let us first check how the words contribute to the sentiments in the NRC lexicon.
+
+```{r message = FALSE,fig.align = "center"}
+# Review tail of all_books
+tidy_books %>%
+    count(word) %>%
+  inner_join(get_sentiments("nrc")) %>%
+  group_by(sentiment)%>%
+        filter(!grepl("positive|negative", sentiment)) %>%
+  top_n(5, n) %>%
+  ungroup() %>%
+  mutate(words = reorder(word, n)) %>%
+  ggplot(aes(x = word, fill = sentiment)) +
+  facet_grid(~sentiment) +
+  geom_bar() + #Create a bar for each word per sentiment
+  theme(panel.grid.major.x = element_blank(),
+        axis.text.x = element_blank()) + #Place the words on the y-axis
+  xlab(NULL) + ylab(NULL) +
+  ggtitle("Words From Mark Twains' Novels") +
+  coord_flip()+ 
+  theme(legend.position="none")
+
+```
+
+
+
+```{r message = FALSE,fig.align = "center"}
+# Review tail of all_books
+books_sent_count2 <- tidy_books %>%
+  inner_join(get_sentiments("nrc")) %>%
+        filter(!grepl("positive|negative", sentiment)) %>%
+  count(sentiment, sort = TRUE) %>%
+  ungroup()
+books_sent_count2%>%
+  ggplot( aes(x=reorder(sentiment,n), y=n,fill=sentiment)) +
+  geom_col()+
+    coord_flip() + 
+  theme(legend.position="none")+ 
+  ggtitle("Top Sentiments in Mark Twains' Novels using NRC Lexicon")
+
+
+```
+
+Next will look how the sentiments were distributed for each of the four novels.Since "The Glided Age" and "Roughing It" are relatively biggers novels in terms of number of words,I have divided each words contribution to the sentiment of a novel by the total contribution to that novel.So that all the novels are in similar scale.
+
+```{r fig.width=10,fig.align = "center"}
+scores <- tidy_books%>%
+  # filter(title != "Roughing It")%>%
+  # filter(title != "Adventures of Huckleberry Finn")%>%
+  inner_join(get_sentiments("nrc"), by = c("word" = "word")) %>% 
+  filter(!grepl("positive|negative", sentiment)) %>% 
+  count(title, sentiment) 
+  scores%>%
+    group_by(title)%>%
+    mutate(total = (n/sum(n))*100) %>%
+    ggplot( aes(x=sentiment, y=total,fill=sentiment)) +
+    geom_bar(stat="identity", width=0.6) +
+    coord_flip() +
+
+    facet_wrap(~title, ncol=4)+
+    theme(legend.position="none")+ 
+  ggtitle("Comparison of Sentiments from Each of the Novels")
+```
+
+Interestingly all the novels show a similar trend for a particular sentiment.The only major difference is in the novel "The Glided Age" where the degree of joy is greater than the degree of sadness and fear.Which is not the trend followed by other novels.<br>
+Earlier also we saw that "The Glided Age" was relatively more positive compared to the other novels. <br>
+
+With that we come to the end of this project.Wow! that was so much fun, learned a lot of new things along the way.The source code can be found here.
+
+## <b>References</b>
+
+[Text Mining with R](https://www.tidytextmining.com/)<br><br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
