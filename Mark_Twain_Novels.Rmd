@@ -1,5 +1,5 @@
 ---
-title: "Text Mining Mark Twain Novels"
+title: "Text Mining Mark Twain's Novels"
 author: "Siddharth Sudhakar"
 date: "14/06/2020"
 output:
@@ -208,7 +208,6 @@ Here we first find a sentiment score for each word using the Bing lexicon and `i
 ```{r message=FALSE}
 
 section_words <- twain_books %>%
-  # filter(title == "The Adventures of Tom Sawyer") %>%
   mutate(section = row_number()) %>%
   filter(section > 0) %>%
   unnest_tokens(word, text) %>%
@@ -242,8 +241,6 @@ books_sent_count <- tidy_books %>%
   inner_join(get_sentiments("bing")) %>%
   count(title, sentiment, sort = TRUE) %>%
   ungroup()
-
-
 
 book_pos <- books_sent_count %>%
   # Group by book
@@ -363,8 +360,6 @@ With that we come to the end of this project.Wow! that was so much fun, learned 
 ## <b>References</b>
 
 [Text Mining with R](https://www.tidytextmining.com/)<br><br>
-
-
 
 
 
