@@ -1,7 +1,7 @@
 ---
 title: "Text Mining Mark Twain Novels"
 author: "Siddharth Sudhakar"
-date: "13/06/2020"
+date: "14/06/2020"
 output:
   html_document:
     css: style1.css
@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## <b>Introduction</b>
 
-Samuel Langhorne Clemens , known worldwide by his pen name Mark Twain, was an American author renowned worldwide as one of the most influential writers in the English language. He has authored more than 25 novels,in this project I will be analysing four of his very famous works :-
+Samuel Langhorne Clemens, known worldwide by his pen name Mark Twain, was an American author renowned worldwide as one of the most influential writers in the English language. He has authored more than 25 novels,in this project I will be analysing four of his very famous works :-
 
 * Adventures of Huckleberry Finn
 * The Adventures of Tom Sawyer
@@ -50,7 +50,7 @@ twain_books <- gutenberg_download(c( 74, 76,3177,3178), meta_fields = "title")
 ```
 
 ## <b>Tokenizing by n-gram</b>
-We got the data, the next step is tokenization.Where we split the data into individual words using the `unnest_tokens` function.Then remove stop words using `antijoin` function. 
+We got the data, the next step is tokenization.Where we split the data into individual words using the `unnest_tokens()`.Then remove stop words using `antijoin()`. 
 
 ```{r message = FALSE}
 tidy_books <- twain_books %>%
@@ -75,7 +75,7 @@ tidy_books %>%
 ```
 
 
-Earlier we simply counted the occurence of each word and listed the most frequent words.One of the problems with this approach is that a word’s context can matter nearly as much as its presence.Thus we will now work with tokens containing two (bigrams) or three(trigrams) words as it can help to extract useful phrases which leads to some additional insights.
+Earlier we simply counted the occurence of each word and listed the most frequent words.But this doesn't provide much information on its own as we are unaware of the context in which these words were used.As we know a word’s context can matter nearly as much as its presence.Thus we will now work with tokens containing two words(bigrams) or three words(trigrams) as it can help to extract useful phrases which leads to some additional insights.
 
 ### <b>Bigrams</b>
 
@@ -86,7 +86,7 @@ books_bigrams
 
 ```
 
-In the below steps, we first split the bigrams into two. Remove if any of the word is a stopword and then we unite them back again. 
+In the below steps, we first split the bigrams into two. Remove if any of the word is a stopword and then unite them back again. 
 
 ```{r}
 bigrams_separated <- books_bigrams %>%
@@ -108,7 +108,7 @@ bigrams_united
 
 ```
 
-After filtering the next step is essentially to find the most common bigrams in each of the novels.
+After filtering, essentially the next step is to find the most common bigrams in each of the novels.
 
 
 ```{r fig.align = "center"}
@@ -167,7 +167,7 @@ ggraph(bigram_graph, layout = "fr") +
 ```
 
 
-In the word network we can see that quantitative words like "yards","miles","dollars","feet" all have a common node "hundred".Also we can see salutation such as "aunt","miss","col"  are followed by their names.Other than those we can see a lot of names coming up.
+In the word network we can see that quantitative words like "yards","miles","dollars","feet" all have a common node "hundred".Also we can see salutation such as "aunt","miss","col"  are followed by their names.Other than those there are a lot of names of characters coming up.
 
 ### <b>Trigrams</b>
 
@@ -204,6 +204,7 @@ tidy_books %>%
 
 ### <b>Overall Sentiment of Novels</b>
 
+Here we first find a sentiment score for each word using the Bing lexicon and `inner_join()`.And then divide each novel into 80 sections and define a column `index` to keep track of where we are in the narrative.This index counts up sections of 80 lines of text.We then use `spread()` so that we have positive and negative sentiment in separate columns, and lastly calculate a net sentiment (positive - negative).Now we can plot the net sentiment score against the `index` on the x-axis that keeps track of narrative time in sections of text.
 ```{r message=FALSE}
 
 section_words <- twain_books %>%
@@ -259,7 +260,7 @@ ggplot(book_pos, aes(title,percent_positive, fill = sentiment)) +
 
 All the novels have a greater proportion of negative sentiment.But earlier when we divided each novel into sections we found that most of the sections were negative.Thus I suspect many words are falsely labelled as positive.
 
-To verify this we will use the bigrams which we collected earlier and find the most common words which are preceded by negation.
+To verify this we will use the bigrams which we collected earlier and use them to find the most common words which are preceded by negation.
 
 ```{r fig.height=8,fig.align = "center"}
 negation_words <- c("not", "no","can't","don't")
@@ -333,7 +334,7 @@ books_sent_count2%>%
 
 ```
 
-Next will look how the sentiments were distributed for each of the four novels.Since "The Glided Age" and "Roughing It" are relatively biggers novels in terms of number of words,I have divided each words contribution to the sentiment of a novel by the total contribution to that novel.So that all the novels are in similar scale.
+Next will look at how the sentiments were distributed for each of the four novels.Since "The Glided Age" and "Roughing It" are relatively biggers novels in terms of number of words, I have divided every words contribution from a particular novel by the total contribution of all the words in that novel.So that all the novels are in similar scale.
 
 ```{r fig.width=10,fig.align = "center"}
 scores <- tidy_books%>%
@@ -362,9 +363,6 @@ With that we come to the end of this project.Wow! that was so much fun, learned 
 ## <b>References</b>
 
 [Text Mining with R](https://www.tidytextmining.com/)<br><br>
-
-
-
 
 
 
